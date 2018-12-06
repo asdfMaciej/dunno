@@ -42,7 +42,7 @@ class Game:
 		player.set_inventory(empty_inventory)
 
 	def set_map(self, map):
-		if not isinstance(map, type(Map)):
+		if not isinstance(map, Map):
 			return False
 		self.map = map
 		return self
@@ -96,6 +96,12 @@ class Player:
 	def get_id(self):
 		return self.id
 
+	def get_move_choices(self):
+		map = self.game.get_map()
+		choices = map.get_connected_locations(self.location)
+		choices.append(self.location)  # current location
+		return choices
+
 class Inventory:
 	def __init__(self):
 		self.items = {}
@@ -148,7 +154,7 @@ class Item:
 class Map:
 	def __init__(self):
 		self.allowed_locations = {}  # id: [id1, id2, id3], id2 ...
-		self.locations = []  # Location objects
+		self.locations = {}  # id: Location objects
 		self.default_location = False
 		self.name = ""
 
@@ -157,26 +163,43 @@ class Map:
 		string = string.format(self.name, len(self.locations))
 		return string
 
-	def add_location(self, location):
+	def is_location(self, location):
 		if not isinstance(location, Location):
-			return False
-		if location in self.locations:
 			return False
 		if not location.is_valid():
 			return False
-		self.locations.append(location)
-		self.allowed_locations[location.get_id()] = []
-		return self
-	
-	def create_location_path(self, source, destinations, mirror=False):
-		if not source in self.locations:
+
+		return True
+
+	def is_added_location(self, location):
+		if not self.is_location(location):
 			return False
-		source_id = source.get_id()
+
+		location_id = location.get_id()
+		if location_id not in self.locations.keys():
+			return False
+
+		return location_id
+			
+	def add_location(self, location):
+		if not self.is_location(location) or self.is_added_location(location):
+			return False
+
+		location_id = location.get_id()
+
+		self.locations[location_id] = location
+		self.allowed_locations[location_id] = []
+		return self
+
+	def connect_location(self, source, destinations, mirror=False):
+		source_id = self.is_added_location(source)
+		if not source_id:
+			return False
 
 		for dest in destinations:
-			if not dest in self.locations:
+			dest_id = self.is_added_location(dest)
+			if not dest_id:
 				return False
-			dest_id = dest.get_id()
 
 			if mirror and source_id not in self.allowed_locations[dest_id]:
 				# destination -> source path, only on mirror == True
@@ -187,22 +210,24 @@ class Map:
 				self.allowed_locations[source_id].append(dest_id)
 		return self
 
-	def is_path(self, source, destination):
-		if source not in self.locations:
+	def is_connected(self, source, destination):
+		if not self.is_location(source):
 			return False
-		if destination not in self.locations:
+		
+		source_id = self.is_added_location(source)
+		destination_id = self.is_added_location(destination)
+
+		if not source_id or not destination_id:
 			return False
 
-		source_id = source.get_id()
-		destination_id = destination.get_id()
-		
 		return destination_id in self.allowed_locations[source_id]
 
 	def remove_location(self, location):
-		if location not in self.locations:
+		removed_id = self.is_added_location(location)
+		if not removed_id:
 			return False
-		self.locations.remove(location)
-		removed_id = location.get_id()
+
+		self.locations.pop(removed_id)
 		self.allowed_locations.pop(removed_id)
 		for key, locations in self.allowed_locations.items():
 			for index, l_id in enumerate(locations):
@@ -213,12 +238,25 @@ class Map:
 		return self
 
 	def get_locations(self):
-		return self.locations
+		return self.locations.items()
+
+	def get_connected_locations(self, source):
+		source_id = self.is_added_location(source)
+		if not source_id:
+			return False
+
+		destinations = []
+
+		for dest_id in self.allowed_locations[source_id]:
+			destinations.append(self.locations[dest_id])
+		
+		return destinations
 
 	def set_default_location(self, location):
-		"""Location must already be added."""
-		if location not in self.locations:
+		location_id = self.is_added_location(location)
+		if not location_id:
 			return False
+
 		self.default_location = location
 		return self
 
@@ -291,6 +329,9 @@ class Location:
 	def is_valid(self):
 		return self.name != ""
 
+	def get_connected_locations(self):
+		return self.map.get_connected_locations(self)
+
 mapa = Map()
 lokacja = Location().set_name("Lokacja")
 szkola = Location().set_name("Szkola")
@@ -300,13 +341,24 @@ dom = Location().set_name("Dom")
 #is_path
 mapa.set_name("Mapka")
 mapa.add_location(lokacja).add_location(szkola).add_location(dom)
-print(mapa.create_location_path(szkola, [dom], True))
-print(mapa.create_location_path(lokacja, [szkola, dom]))
-print(mapa)
-print(mapa.is_path(szkola, dom))  # True
-print(mapa.is_path(dom, szkola))  # True - mirrored
-print(mapa.is_path(szkola, lokacja)) # False
-print(mapa.is_path(lokacja, szkola)) # True
+print(mapa.connect_location(szkola, [dom], True))
+print(mapa.connect_location(lokacja, [szkola, dom]))
+"""print(mapa)
+print(mapa.is_connected(szkola, dom))  # True
+print(mapa.is_connected(dom, szkola))  # True - mirrored
+print(mapa.is_connected(szkola, lokacja)) # False
+print(mapa.is_connected(lokacja, szkola)) # True
 print(mapa.allowed_locations)
+print(mapa.locations)
 print(mapa.remove_location(dom))
+print(mapa.locations)
 print(mapa.allowed_locations)
+print(mapa.remove_location(dom))  # false
+print(mapa.add_location("Dupa"))"""
+print(mapa.set_default_location(dom))
+gra = Game()
+gra.set_map(mapa)
+
+gracz = Player()
+gra.add_player(gracz)
+gracz.get_move_choices()
