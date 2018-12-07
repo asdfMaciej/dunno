@@ -19,19 +19,22 @@ class Game:
 				break
 
 		self.player_ids.append(player.get_id())
+		self.players.append(player)
 		return True
 
 	def remove_player(self, to_remove_player):		
 		for pos, player in enumerate(self.players):
-			if player == to_remove_player:
+			if player.get_id() == to_remove_player.get_id():
 				player_id = player.get_id()
 				self.deattach_player(player) 
 				self.players.pop(pos)
 				self.player_ids.remove(player_id)
 				return True
+		return False
 
 	def deattach_player(self, player):
 		player.reset_player()
+		self.map.remove_player(player)
 
 	def attach_player(self, player):
 		location = self.map.get_default_location()
@@ -40,6 +43,7 @@ class Game:
 		player.set_game(self)
 		player.set_location(location)
 		player.set_inventory(empty_inventory)
+		self.map.add_player(player, location)
 
 	def set_map(self, map):
 		if not isinstance(map, Map):
@@ -62,7 +66,7 @@ class Game:
 class Player:
 	def __init__(self):
 		self.reset_player()
-		self.id = 0
+		self.id = uuid.uuid4().hex
 
 	def __eq__(self, other):  # equals
 		if isinstance(other, Player):
@@ -83,8 +87,10 @@ class Player:
 	
 	def reset_inventory(self):
 		self.inventory = False
+
 	def reset_location(self):
 		self.location = False
+
 	def reset_game(self):
 		self.game = False
 	
@@ -96,11 +102,18 @@ class Player:
 	def get_id(self):
 		return self.id
 
+	def get_location(self):
+		return self.location
+
 	def get_move_choices(self):
 		map = self.game.get_map()
 		choices = map.get_connected_locations(self.location)
-		choices.append(self.location)  # current location
 		return choices
+	
+	def move(self, location):
+		map = self.game.get_map()
+		result = map.move_player(self, location)
+		return result
 
 class Inventory:
 	def __init__(self):
@@ -155,6 +168,8 @@ class Map:
 	def __init__(self):
 		self.allowed_locations = {}  # id: [id1, id2, id3], id2 ...
 		self.locations = {}  # id: Location objects
+		self.location_players = {} # location_id : player_id
+		self.players = [] # ids
 		self.default_location = False
 		self.name = ""
 
@@ -170,7 +185,83 @@ class Map:
 			return False
 
 		return True
+	
+	def is_player(self, player):
+		if not isinstance(player, Player):
+			return False
+		
+		return True
 
+	def is_added_player(self, player):
+		if not self.is_player(player):
+			return False
+		
+		player_id = player.get_id()
+		if not player_id in self.players:
+			return False
+
+		return player_id
+
+	def add_player(self, player, location):
+		if not self.is_player(player) or self.is_added_player(player):
+			return False
+		
+		location_id = self.is_added_location(location)
+		if not location_id:
+			return False
+
+		player_id = player.get_id()
+		self.players.append(player_id)
+		if location_id not in self.location_players.keys():
+			self.location_players[location_id] = []
+
+		self.location_players[location_id].append(player_id)
+		return self
+
+	def remove_player(self, player):
+		player_id = self.is_added_player(player)
+		
+		if not player_id:
+			return False
+
+		for location_id, player_ids in self.location_players.items():
+			for n, p_id in enumerate(player_ids):
+				if p_id == player_id:
+					self.location_players[location_id].pop(n)
+					break
+		self.players.remove(player_id)
+
+		return self
+
+	def move_player(self, player, location):
+		player_id = self.is_added_player(player)
+		location_id = self.is_added_location(location)
+
+		if (not player_id) or (not location_id):
+			return False
+		
+		prev_location = player.get_location()
+		prev_id = prev_location.get_id()
+		connected = self.get_connected_locations(prev_location)
+
+		exists = False
+		for loc in connected:
+			if location_id == loc.get_id():
+				exists = True
+				break
+		
+		if not exists:
+			return False
+
+		if location_id not in self.location_players.keys():
+			self.location_players[location_id] = []
+
+		self.location_players[prev_id].remove(player_id)
+		self.location_players[location_id].append(player_id)
+
+		player.set_location(location)
+		return self		 
+	
 	def is_added_location(self, location):
 		if not self.is_location(location):
 			return False
@@ -245,7 +336,7 @@ class Map:
 		if not source_id:
 			return False
 
-		destinations = []
+		destinations = [source]
 
 		for dest_id in self.allowed_locations[source_id]:
 			destinations.append(self.locations[dest_id])
@@ -337,8 +428,6 @@ lokacja = Location().set_name("Lokacja")
 szkola = Location().set_name("Szkola")
 dom = Location().set_name("Dom")
 
-#create_location_path
-#is_path
 mapa.set_name("Mapka")
 mapa.add_location(lokacja).add_location(szkola).add_location(dom)
 print(mapa.connect_location(szkola, [dom], True))
@@ -361,4 +450,22 @@ gra.set_map(mapa)
 
 gracz = Player()
 gra.add_player(gracz)
-gracz.get_move_choices()
+#gracz.get_move_choices()
+print(gracz.get_location())
+#print(mapa.allowed_locations)
+#print(dom.id)
+#print(szkola.id)
+print(gracz.move(szkola))
+print(gracz.get_location())
+print(gracz.move(lokacja))
+print(gracz.get_location())
+print(mapa.connect_location(szkola, [lokacja], True))
+print(mapa.move_player(gracz, lokacja))
+print(gracz.get_location())
+gra.remove_player(gracz)
+gra.add_player(gracz)
+gra.remove_player(gracz)
+print(gracz.get_location())
+print(gra.add_player(gracz))
+print(gracz.get_location())
+print(mapa.location_players)
